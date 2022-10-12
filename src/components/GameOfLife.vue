@@ -1,135 +1,152 @@
 <script lang="ts" setup>
-import { type Ref, ref, onUpdated } from 'vue';
+import { ref } from 'vue'
 
-interface cell {
-  state: boolean
-  color: string
-  draw: boolean
+import Cell, { WorldContext } from '../assets/script/cell'
+
+let isPlaying: boolean = false
+let isInit: boolean = false
+
+let grid: Cell[] = []
+let context: CanvasRenderingContext2D | null | undefined
+
+let currentFrame: number
+
+const display = ref<HTMLCanvasElement | undefined>()
+const gridLength = ref<number>(192)
+const zoom = ref<number>(5)
+
+const draw = (): void => {
+  grid.forEach(cell => cell.draw())
 }
 
-let ctx: CanvasRenderingContext2D | null | undefined
+const init = (): void => {
 
-let grid: cell[] = []
-let isPlaying: Boolean = false
+  isPlaying = false
+  isInit = true
+  context = display.value?.getContext('2d')
 
-const display: Ref<HTMLCanvasElement | undefined> = ref()
-const gridLength: Ref<number> = ref(192)
+  if (context && context !== null) {
 
+    const worldContext: WorldContext = {
+      renderCtx: context,
+      cellSize: zoom.value,
+      gridSize: gridLength.value
+    }
 
-const init = (evt: MouseEvent | null, play: Boolean = false): void => {
+    grid = []
 
-  console.log('init')
+    while (grid.length < Math.pow(gridLength.value, 2)) {
 
-  grid = []
-  ctx = display.value?.getContext('2d')
-  isPlaying = play
+      const isAlive: boolean = Math.random() >= 0.5
+      const color: string = isAlive ? '#00FF00' : '#000000'
 
-  while (grid.length < Math.pow(gridLength.value, 2)) {
+      grid.push(new Cell(grid.length, isAlive, color, worldContext))
+    }
 
-    const state = Math.random() <= 0.5
-      ? { state: false, color: '#000000', draw: false }
-      : { state: true, color: '#00FF00', draw: false }
-
-      grid.push(state)
+    draw()
   }
+}
+
+const countLiveNeighbors = (cell: Cell): number => {
+
+  const { value: w } = gridLength
+  const { index: idx, posX, posY } = cell
+
+  let count = 0
+
+  // NW
+  count += (posX && posY && grid[idx - w - 1].isAlive) ? 1: 0
+  // N
+  count += (posY && grid[idx - w].isAlive) ? 1 : 0
+  // NE
+  count += (posX < w - 1 && posY && grid[idx - w + 1].isAlive) ? 1 : 0
+  // E
+  count += (posX < w - 1 && grid[idx + 1].isAlive) ? 1 : 0
+  // SE
+  count += (posX < w - 1 && posY < w - 1 && grid[idx + w + 1].isAlive) ? 1 : 0
+  // S
+  count += (posY < w - 1 && grid[idx + w].isAlive) ? 1 : 0
+  // SW
+  count += (posX && posY < w - 1 && grid[idx + w - 1].isAlive) ? 1 : 0
+  // W
+  count += (posX && grid[idx - 1].isAlive) ? 1 : 0
+
+  return count
+}
+
+const computeNextColor = (isAlive: boolean, wasAlive: boolean): string => {
+
+  if (wasAlive) {
+
+    if (isAlive) {
+      // Cell lives
+      return 'rgba(255, 255, 255, 0.125)'
+    }
+
+    // Cell dies
+    return '#FF0000'
+  }
+
+  if (isAlive) {
+    // Cell spawns
+    return '#00FF00'
+  }
+
+  // Cell is dead
+  return 'rgba(0, 0, 0, 0.125)'
 }
 
 const update = (): void => {
 
-  console.log('update')
+  const nextGrid: Cell[] = []
 
-  const nextGrid: cell[] = []
+  grid.forEach((cell) => {
 
-  grid.forEach((cell, cellIndex) => {
+    const count: number = countLiveNeighbors(cell)
+    const cellChanges: boolean = cell.isAlive && (count < 2 || count > 3) || !cell.isAlive && count === 3
+    const isAlive: boolean = cellChanges ? !cell.isAlive : cell.isAlive
+    const color: string = computeNextColor(isAlive, cell.isAlive)
 
-    let count = 0
-
-    count += grid[cellIndex - gridLength.value]?.state ? 1 : 0
-    count += grid[cellIndex - gridLength.value - 1]?.state ? 1 : 0
-    count += grid[cellIndex - gridLength.value + 1]?.state ? 1 : 0
-
-    count += grid[cellIndex + 1]?.state ? 1 : 0
-
-    count += grid[cellIndex + gridLength.value]?.state ? 1 : 0
-    count += grid[cellIndex + gridLength.value - 1]?.state ? 1 : 0
-    count += grid[cellIndex + gridLength.value + 1]?.state ? 1 : 0
-
-    count += grid[cellIndex - 1]?.state ? 1 : 0
-
-    if (cell.state && (count < 2 || count > 3)) {
-      nextGrid[cellIndex] = { state: false, color: '#FF0000', draw: true }
-    } else if (!cell.state && count === 3) {
-      nextGrid[cellIndex] = { state: true, color: '#00FF00', draw: true }
-    } else {
-      if (cell.state) {
-        nextGrid[cellIndex] = { ...cell, color: 'rgba(255, 255, 255, 0.125)' }
-      } else {
-        nextGrid[cellIndex] = { ...cell, draw: false }
-      }
-    }
+    nextGrid.push(new Cell(cell.index, isAlive, color, cell.context))
   })
 
   grid = nextGrid
+
+  draw()
 }
 
-let countDown = 0
+const reset = (): void => {
 
-const draw = (play: boolean = true): void => {
+  isPlaying = false
 
-  console.log('draw')
+  window.cancelAnimationFrame(currentFrame)
 
-  if (countDown === 3 || !play) {
-
-    countDown = 0
-
-    if (ctx) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.125)'
-      ctx.fillRect(0, 0, gridLength.value * 5, gridLength.value * 5)
-    }
-
-    grid.forEach((cell, cellIndex) => {
-
-      if (cell.draw) {
-
-        const pxX: number = cellIndex % gridLength.value
-        const pxY: number = cellIndex < gridLength.value
-          ? 0
-          : Math.floor(cellIndex / gridLength.value)
-
-        if (ctx) {
-          ctx.fillStyle = cell.color
-          ctx.fillRect(pxX * 5, pxY * 5, 1 * 5, 1 * 5)
-        }
-      }
-    })
-
-    update()
-  } else {
-    countDown += 1
-  }
-
-  if (isPlaying) {
-    requestAnimationFrame(() => draw(true))
-  }
+  currentFrame = requestAnimationFrame(() => {
+    init()
+  })
 }
 
-const startStop = (): void => {
+const play = (evt?: MouseEvent): void => {
 
-  isPlaying = !isPlaying
+  if (evt) {
 
-  if (isPlaying) {
-
-    if (!grid.length) {
-      init(null, true)
+    if (!isInit) {
+      init()
     }
 
-    requestAnimationFrame(() => draw(true))
+    isPlaying = !isPlaying
+  }
+
+  update()
+
+  if (isPlaying) {
+    currentFrame = requestAnimationFrame(() => play())
   }
 }
 
 const step = (): void => {
   isPlaying = false
-  requestAnimationFrame(() => draw(false))
+  update()
 }
 </script>
 
@@ -137,20 +154,33 @@ const step = (): void => {
   <canvas
     class="game-of-life"
     ref="display"
-    :width="gridLength * 5"
-    :height="gridLength * 5"
+    :width="gridLength * zoom"
+    :height="gridLength * zoom"
   ></canvas>
 
   <div class="controls">
-    <input
-      type="number"
-      min="0"
-      max="512"
-      v-model="gridLength"
-    />
+    <label>
+      <span>Grid size:</span>
 
-    <button @click="init">INIT / RESET</button>
-    <button @click="startStop">START / PAUSE</button>
+      <input
+        type="number"
+        min="3"
+        v-model="gridLength"
+      />
+    </label>
+
+    <label>
+      <span>Zoom:</span>
+
+      <input
+        type="number"
+        min="1"
+        v-model="zoom"
+      />
+    </label>
+
+    <button @click="reset">RESET</button>
+    <button @click="play">PLAY</button>
     <button @click="step">STEP</button>
   </div>
 </template>
