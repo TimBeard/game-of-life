@@ -5,6 +5,7 @@ import Cell, { WorldContext } from '../assets/script/cell'
 
 let isPlaying: boolean = false
 let isInit: boolean = false
+let framesElapsed: number = 0
 
 let grid: Cell[] = []
 let context: CanvasRenderingContext2D | null | undefined
@@ -12,8 +13,9 @@ let context: CanvasRenderingContext2D | null | undefined
 let currentFrame: number
 
 const display = ref<HTMLCanvasElement | undefined>()
-const gridLength = ref<number>(192)
-const zoom = ref<number>(5)
+const gridLength = ref<number>(256)
+const zoom = ref<number>(4)
+const throttle = ref<number>(3)
 
 const draw = (): void => {
   grid.forEach(cell => cell.draw())
@@ -137,9 +139,15 @@ const play = (evt?: MouseEvent): void => {
     isPlaying = !isPlaying
   }
 
-  update()
-
   if (isPlaying) {
+
+    if (framesElapsed >= throttle.value) {
+      framesElapsed = 0
+      update()
+    } else {
+      framesElapsed += 1
+    }
+
     currentFrame = requestAnimationFrame(() => play())
   }
 }
@@ -176,6 +184,16 @@ const step = (): void => {
         type="number"
         min="1"
         v-model="zoom"
+      />
+    </label>
+
+    <label>
+      <span>Throttle:</span>
+
+      <input
+        type="number"
+        min="0"
+        v-model="throttle"
       />
     </label>
 
